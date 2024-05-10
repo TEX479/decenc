@@ -156,7 +156,7 @@ def decrypt_with_pass(s, password, nlayers=1, verbose=False, hashOS=sys.platform
     """
     for i in range(nlayers):
         dec = DEC_ENC(s, hashOS)
-        s = dec_msg_pass(dec, password)
+        s = dec_msg_pass(dec, password, hashOS)
 
         if verbose:
             debug('=== Pass {} ==='.format(i+1))
