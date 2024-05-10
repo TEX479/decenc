@@ -45,10 +45,8 @@ def hn_hash_win(text):
     return intify(num + num2*0x5d588b65)
 
 def hn_hash(text, hashOS):
-    if hashOS in ['windows','Windows']:
-        hashOS = 'win32'
-    # Only Windows actually differ
-    if hashOS in ['win32', 'cygwin']:
+    # Only Windows actually differs
+    if hashOS in ['windows','Windows','win32', 'cygwin']:
         h = hn_hash_win(text)
     else:
         h = hn_hash_linux(text)
