@@ -44,16 +44,15 @@ def hn_hash_win(text):
 
     return intify(num + num2*0x5d588b65)
 
-def hn_hash(text):
+def hn_hash(text, hashOS):
+    if hashOS in ['windows','Windows']:
+        hashOS = 'win32'
     # Only Windows actually differ
-    if sys.platform in ['win32', 'cygwin']:
+    if hashOS in ['win32', 'cygwin']:
         h = hn_hash_win(text)
     else:
         h = hn_hash_linux(text)
     return h % (2**16)
-
-
-NOPASS = hn_hash('')
 
 # Actual decryption/encryption code
 def decrypt(data, passcode):
@@ -80,7 +79,7 @@ class DEC_ENC:
 
         Parses DEC_ENC file contents and decrypt header.
     """
-    def __init__(self, content):
+    def __init__(self, content, hashOS=sys.platform):
         header,self.cipher = content.strip().split('\n')
 
         header = header.split('::')
@@ -91,18 +90,18 @@ class DEC_ENC:
             _,comment,signature,check = header
 
         if comment:
-            comment = decrypt(comment, NOPASS)
+            comment = decrypt(comment, hn_hash('', hashOS))
         if signature:
-            signature = decrypt(signature, NOPASS)
+            signature = decrypt(signature, hn_hash('', hashOS))
         if extension:
-            extension = decrypt(extension, NOPASS)
+            extension = decrypt(extension, hn_hash('', hashOS))
 
         self.comment = comment
         self.signature = signature
         self.check = check
         self.extension = extension
 
-        self.need_pass = decrypt(self.check, NOPASS) != 'ENCODED'
+        self.need_pass = decrypt(self.check, hn_hash('', hashOS)) != 'ENCODED'
 
     def header(self):
         H = []
@@ -126,11 +125,11 @@ def dec_msg_brute(dec):
             break
     return pw, plain
 
-def dec_msg_pass(dec, password):
+def dec_msg_pass(dec, password, hashOS):
     """
         Decode with given pass
     """
-    i = hn_hash(password)
+    i = hn_hash(password, hashOS)
     r = decrypt(dec.check,i)
     if r == 'ENCODED':
         plain = decrypt(dec.cipher,i)
@@ -142,23 +141,23 @@ def dec_msg_pass(dec, password):
     return plain
 
 # User level stuff
-def decrypt_header_only(s):
+def decrypt_header_only(s, hashOS):
     """
         Decrypt only the header
     """
-    dec = DEC_ENC(s)
+    dec = DEC_ENC(s, hashOS)
     print(dec.header())
     if dec.need_pass:
         print('Content is password protected')
     else:
         print('Content is not password protected')
 
-def decrypt_with_pass(s, password, nlayers=1, verbose=False):
+def decrypt_with_pass(s, password, nlayers=1, verbose=False, hashOS=sys.platform):
     """
         Decrypt given password
     """
     for i in range(nlayers):
-        dec = DEC_ENC(s)
+        dec = DEC_ENC(s, hashOS)
         s = dec_msg_pass(dec, password)
 
         if verbose:
@@ -167,35 +166,35 @@ def decrypt_with_pass(s, password, nlayers=1, verbose=False):
         #plain = dec_msg_pass(check, msg, 'Obi-Wan')
     return dec,s
 
-def decrypt_brute(s, nlayers=1, verbose=False):
+def decrypt_brute(s, nlayers=1, verbose=False, hashOS=sys.platform):
     """
         Brute force decrypter
     """
     for i in range(nlayers):
-        dec = DEC_ENC(s)
+        dec = DEC_ENC(s, hashOS)
         pw,s = dec_msg_brute(dec)
 
         if verbose:
             debug('=== Pass {} ==='.format(i+1))
             debug(dec.header())
             #debug(s)
-            if sys.platform in ["win32","darwin"]:
+            if hashOS in ["win32","darwin"]:
                 import rainbow_win as rainbow
             else:
                 import rainbow_linux as rainbow
             debug('One possible pass is', rainbow.table[pw])
     return dec,s
 
-def encrypt_with_pass(comment, signature, extension, plain, password):
+def encrypt_with_pass(comment, signature, hashOS, extension, plain, password):
     """
         Encrypt given password
     """
-    passnum = hn_hash(password)
+    passnum = hn_hash(password, hashOS)
 
-    comment = encrypt(comment, NOPASS)
-    signature = encrypt(signature, NOPASS)
+    comment = encrypt(comment, hn_hash('', hashOS))
+    signature = encrypt(signature, hn_hash('', hashOS))
     check = encrypt('ENCODED', passnum)
-    extension = encrypt(extension, NOPASS)
+    extension = encrypt(extension, hn_hash('', hashOS))
     cipher = encrypt(plain, passnum)
 
     if extension:

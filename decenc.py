@@ -19,9 +19,9 @@ def decypher(args):
     cipher = read_input(args.infile)
 
     if args.brute:
-        dec,plain = hn.decrypt_brute(cipher, args.layers, args.verbose)
+        dec,plain = hn.decrypt_brute(cipher, args.layers, args.verbose, args.OS)
     else:
-        dec,plain = hn.decrypt_with_pass(cipher, args.password, args.layers, args.verbose)
+        dec,plain = hn.decrypt_with_pass(cipher, args.password, args.layers, args.verbose, args.OS)
 
     if args.outfile == '-':
         sys.stdout.write(plain)
@@ -32,7 +32,7 @@ def decypher(args):
 
 def dechead(args):
     cipher = read_input(args.infile)
-    hn.decrypt_header_only(cipher)
+    hn.decrypt_header_only(cipher, args.OS)
 
 def encypher(args):
     plain = read_input(args.infile)
@@ -40,7 +40,7 @@ def encypher(args):
     i = args.infile.rfind('.')
     extension = args.infile[i:] if i != -1 else ''
 
-    cipher = hn.encrypt_with_pass(args.comment, args.signature, extension,
+    cipher = hn.encrypt_with_pass(args.comment, args.signature, args.OS, extension,
                                   plain, args.password)
 
     if args.outfile == '-':
@@ -49,7 +49,6 @@ def encypher(args):
         outfile = args.outfile
         with open(outfile, 'w') as f:
             f.write(cipher)
-
 
 # Input parsing
 parser = argparse.ArgumentParser()
@@ -86,6 +85,10 @@ dec_parser.add_argument('--brute',
 dec_parser.add_argument('--layers', '-n',
                         default=1, type=int, metavar='n',
                         help="layers of decryption")
+dec_parser.add_argument('--OS', '-O',
+                        default=sys.platform,
+                        help="force a specific hashing algorithm, defaults to current OS (windows,linux)")
+
 dec_parser.set_defaults(mode=decypher)
 
 # Dechead
@@ -94,6 +97,10 @@ head_parser = subparsers.add_parser('dechead', help='header decryption mode')
 head_parser.add_argument('infile',
                          nargs='?', default='-',
                          help="input file")
+head_parser.add_argument('--OS', '-O',
+                        default=sys.platform,
+                        help="force a specific hashing algorithm, defaults to current OS (windows,linux)")
+
 head_parser.set_defaults(mode=dechead)
 
 # Encypher
@@ -114,9 +121,13 @@ enc_parser.add_argument('--comment', '-c',
 enc_parser.add_argument('--signature', '-s',
                         default='',
                         help="header signature")
+enc_parser.add_argument('--OS', '-O',
+                        default=sys.platform,
+                        help="force a specific hashing algorithm, defaults to current OS (windows,linux)")
 enc_parser.set_defaults(mode=encypher)
 
 
 args = parser.parse_args()
 
 args.mode(args)
+
