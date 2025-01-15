@@ -3,6 +3,7 @@ import sys
 if sys.version_info < (3, 0):
     range = xrange
 
+WINDOWS_IDENTIFIERS = ['windows','Windows','win32', 'cygwin']
 
 # General helper
 def debug(*args,**kwargs): print(*args,file=sys.stderr,**kwargs)
@@ -46,7 +47,7 @@ def hn_hash_win(text):
 
 def hn_hash(text, hashOS):
     # Only Windows actually differs
-    if hashOS in ['windows','Windows','win32', 'cygwin']:
+    if hashOS in WINDOWS_IDENTIFIERS:
         h = hn_hash_win(text)
     else:
         h = hn_hash_linux(text)
