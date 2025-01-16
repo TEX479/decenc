@@ -7,11 +7,11 @@ if sys.version_info < (3, 0):
 import argparse
 import hn_encryption as hn
 
-def read_input(fname):
-    if args.infile == '-':
+def read_input(fname:str) -> str:
+    if fname == '-':
         return sys.stdin.read()
     else:
-        with open(args.infile) as f:
+        with open(fname) as f:
             return f.read()
 
 # Modes
