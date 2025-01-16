@@ -1,33 +1,22 @@
-decenc
-======
+# decenc
 
-Tools for working with DEC_ENC files from the (very enjoyable) game Hacknet,
-written for python3 but compatible with python2.  DEC_ENC is a quite simple
-encryption scheme that allows password protected storage while still allowing a
-header to be read without a password.
+Tools for working with DEC_ENC files from the (very enjoyable) game [Hacknet](https://hacknet-os.com/), written for python3. DEC_ENC is a quite simple encryption scheme that allows password protected storage while still allowing a header to be read without a password.
 
-The tools include replacements for the in-game programs Decypher and DECHead,
-as well as a new encoding tool (Encypher).
+The tools include replacements for the in-game programs Decypher and DECHead, as well as a new encoding tool (Encypher).
 
 The Decypher tool has been extended with a brute-force cracker!
 
-Compatability
--------------
+## Compatability
 
-These tools are compatible with the in-game format, i.e. you can open your
-in-game .dec files with this program. This was done by disassembling the source
-of the code to find the hashing method used by the mono runtime bundled with
-Hacknet and reproducing it in python.
+These tools are compatible with the in-game format, i.e. you can open your in-game .dec files with this program. This was done by disassembling the source of the code to find the hashing method used by the mono runtime bundled with Hacknet and reproducing it in python.
 
-Brute force cracking
---------------------
+## Brute force cracking
 
 The major new feature of cracking a file, along with producing a valid password, is possible due to a weakness in the encryption scheme. Passwords are hashed into one of only 65536 possible values, and successful decryption can easily be checked by design.
 
 By brute forcing over combinations of characters a rainbow table can be computing mapping hashes to some corresponding password. It turns out that 4 character passwords is plenty enough for this, and this table can be seen in `rainbow.py`.
 
-Usage
------
+## Usage
 
 The three subcommands can be executed through
 
@@ -75,7 +64,5 @@ Sample usage of encypher
     # Encrypt from stdin with no header info or password, output to stdout
     echo 'Hello, Hacknet!' | python decenc.py encypher
 
-Notes
------
-
-I wrote this for my own sake after playing the game and being frustrated at not finding passwords for all encrypted files. It was quite a fun challenge and was greatly helped by the helpful C# code scraps left around by the developer, along with C# being pretty easy to decompile. As this is just a project for fun I didn't put too much care into the design of the command line interface, but it should be fine enough.
+## Notes
+This is a fork of [a fork](https://github.com/not-pyroman/decenc) of the [original DEC_ENC](https://github.com/algmyr/decenc) project. I made some modifications to the project that allow any files to be encrypted, even binary files, archives and the likes. If I broke some functionality in the CLI-tool, I can not be botherd to fix them right now. Check out the original or the other fork for working versions and give [algmyr](https://github.com/algmyr) (author of the original) some credit for their fantastic work, figuring out the actual algorithm used in th game.
