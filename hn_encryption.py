@@ -13,23 +13,23 @@ def intify(x:int) -> int:
     if y > 0x7fffffff: y -= 2**32
     return y
 
-def hn_hash_linux(text:str) -> int:
+def hn_hash_linux(text:bytes) -> int:
     """
         Hash matching the version used in Hacknet on Linux
         (and other systems using mono)
     """
     num = 0
     for c in text:
-        num = intify((num << 5) - num + ord(c))
+        num = intify((num << 5) - num + int(c))
     return num
 
-def hn_hash_win(text:str) -> int:
+def hn_hash_win(text:bytes) -> int:
     """
         Hash matching the version used in Hacknet on Windows
     """
     num = num2 = 0x15051505
 
-    A = [ord(x) for x in text]
+    A = [int(x) for x in text]
     if len(A)%2 == 1:
         A.append(0)
 
@@ -44,7 +44,7 @@ def hn_hash_win(text:str) -> int:
 
     return intify(num + num2*0x5d588b65)
 
-def hn_hash(text:str, hashOS:str) -> int:
+def hn_hash(text:bytes, hashOS:str) -> int:
     # Only Windows actually differs
     if hashOS in WINDOWS_IDENTIFIERS:
         h = hn_hash_win(text)
@@ -53,20 +53,20 @@ def hn_hash(text:str, hashOS:str) -> int:
     return h % (2**16)
 
 # Actual decryption/encryption code
-def decrypt(data:str, passcode:int) -> str:
+def decrypt(data:str, passcode:int) -> bytes:
     strArray = data.split()
 
-    R: list[str] = []
+    R = bytearray()
     for s in strArray:
         num2 = int(s)
         num4 = (num2 - 0x7fff) - passcode
         num4 //= 1822
-        R.append(chr(num4))
-    return ''.join(R)
+        R.append(int(num4))
+    return bytes(R)
 
-def encrypt(data:str, passcode:int) -> str:
+def encrypt(data:bytes, passcode:int) -> str:
     R: list[int] = []
-    for c in map(ord, data):
+    for c in data:
         R.append(c*1822 + passcode + 0x7fff)
     return ' '.join(map(str,R))
 
@@ -89,51 +89,48 @@ class DEC_ENC:
             _,comment,signature,check = header
 
         if comment:
-            comment = decrypt(comment, hn_hash('', hashOS))
+            comment = decrypt(comment, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
         if signature:
-            signature = decrypt(signature, hn_hash('', hashOS))
+            signature = decrypt(signature, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
         if extension:
-            extension = decrypt(extension, hn_hash('', hashOS))
+            extension = decrypt(extension, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
 
         self.comment = comment
         self.signature = signature
         self.check = check
         self.extension = extension
 
-        self.need_pass = decrypt(self.check, hn_hash('', hashOS)) != 'ENCODED'
+        self.need_pass = decrypt(self.check, hn_hash(b'', hashOS)) != b'ENCODED'
 
     def header(self) -> str:
-        H: list[str] = []
-        def add(s:str, x:str):
-            if x: H.append(s+': {}'.format(x))
-        add('Comment', self.comment)
-        add('Signature', self.signature)
-        add('Extension', self.extension)
-        return '\n'.join(H)
+        h: str = f'Comment: {self.comment}'
+        h += f'\nSignature: {self.signature}'
+        h += f'\nExtension: {self.extension}'
+        return h
 
 # Decoding ways
-def dec_msg_brute(dec:DEC_ENC) -> tuple[int, str]:
+def dec_msg_brute(dec:DEC_ENC) -> tuple[int, bytes]:
     """
         Brute force decoding
     """
     # Brute force decryption
     for pw in range(0,2**16):
         r = decrypt(dec.check, pw)
-        if r == 'ENCODED':
+        if r == b'ENCODED':
             plain = decrypt(dec.cipher, pw)
             break
     return pw, plain # type: ignore # <- this is fine, since we know that the loop in this function always sets "pw" and "plain"
 
-def dec_msg_pass(dec:DEC_ENC, password:str, hashOS:str) -> str:
+def dec_msg_pass(dec:DEC_ENC, password:bytes, hashOS:str) -> bytes:
     """
         Decode with given pass
     """
     i = hn_hash(password, hashOS)
     r = decrypt(dec.check,i)
-    if r == 'ENCODED':
+    if r == b'ENCODED':
         plain = decrypt(dec.cipher,i)
     else:
-        if password == '':
+        if password == b'':
             raise Exception("A password is needed")
         else:
             raise Exception("Wrong password")
@@ -151,29 +148,37 @@ def decrypt_header_only(s:str, hashOS:str) -> None:
     else:
         print('Content is not password protected')
 
-def decrypt_with_pass(s:str, password:str, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform) -> tuple[DEC_ENC, str]:
+def decrypt_with_pass(s:str, password:bytes, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform) -> tuple[DEC_ENC, bytes]:
     """
         Decrypt given password
     """
     if nlayers <= 0: raise ValueError("0 decryptions means this function does nothing.")
     for i in range(nlayers):
         dec = DEC_ENC(s, hashOS)
-        s = dec_msg_pass(dec, password, hashOS)
+        s_bytes = dec_msg_pass(dec, password, hashOS)
+
+        if i+1 < nlayers:
+            try:    s = s_bytes.decode(encoding='utf-8', errors='strict')
+            except: raise ValueError(f"Unable to decrypt past layer {i}. Is 'nlayers' set too high for this file?")
 
         if verbose:
             debug('=== Pass {} ==='.format(i+1))
             debug(dec.header())
         #plain = dec_msg_pass(check, msg, 'Obi-Wan')
-    return dec,s # type: ignore # <- this is fine, because dec will be set in the loop
+    return dec,s_bytes # type: ignore # <- this is fine, because dec will be set in the loop
 
-def decrypt_brute(s:str, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform):
+def decrypt_brute(s:str, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform) -> tuple[DEC_ENC, bytes]:
     """
         Brute force decrypter
     """
     if nlayers <= 0: raise ValueError("0 decryptions means this function does nothing.")
     for i in range(nlayers):
         dec = DEC_ENC(s, hashOS)
-        pw,s = dec_msg_brute(dec)
+        pw,s_bytes = dec_msg_brute(dec)
+
+        if i+1 < nlayers:
+            try:    s = s_bytes.decode(encoding='utf-8', errors='strict')
+            except: raise ValueError(f"Unable to decrypt past layer {i}. Is 'nlayers' set too high for this file?")
 
         if verbose:
             debug('=== Pass {} ==='.format(i+1))
@@ -184,22 +189,35 @@ def decrypt_brute(s:str, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platf
             else:
                 import rainbow_linux as rainbow
             debug('One possible pass is', rainbow.table[pw])
-    return dec,s # type: ignore # <- this is fine, because dec will be set in the loop
+    return dec,s_bytes # type: ignore # <- this is fine, because dec will be set in the loop
 
-def encrypt_with_pass(comment:str, signature:str, hashOS:str, extension:str, plain:str, password:str) -> str:
+def encrypt_with_pass(comment:str, signature:str, hashOS:str, extension:str|None, plain:bytes, password:bytes) -> str:
     """
         Encrypt given password
     """
     passnum = hn_hash(password, hashOS)
 
-    comment = encrypt(comment, hn_hash('', hashOS))
-    signature = encrypt(signature, hn_hash('', hashOS))
-    check = encrypt('ENCODED', passnum)
-    extension = encrypt(extension, hn_hash('', hashOS))
+    comment = encrypt(comment.encode("utf-8"), hn_hash(b'', hashOS))
+    signature = encrypt(signature.encode("utf-8"), hn_hash(b'', hashOS))
+    check = encrypt('ENCODED'.encode("utf-8"), passnum)
+    if extension != None: extension = encrypt(extension.encode("utf-8"), hn_hash(b'', hashOS))
     cipher = encrypt(plain, passnum)
 
-    if extension:
+    if extension != None:
         header = ['#DEC_ENC', comment, signature, check, extension]
     else:
         header = ['#DEC_ENC', comment, signature, check]
     return '::'.join(header) + '\n' + cipher
+
+if __name__ == "__main__":
+    with open("message_linux.dec", "r") as f:
+        s = f.read()
+    dec_enc, output_bytes = decrypt_brute(s=s, nlayers=1, verbose=True, hashOS="linux")
+    #print(dec_enc.header())
+    print(output_bytes.decode(encoding="utf-8", errors="replace"))
+
+    with open("message_win.dec", "r") as f:
+        s = f.read()
+    dec_enc, output_bytes = decrypt_brute(s=s, nlayers=1, verbose=True, hashOS="windows")
+    #print(dec_enc.header())
+    print(output_bytes.decode(encoding="utf-8", errors="replace"))

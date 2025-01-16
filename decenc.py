@@ -21,13 +21,13 @@ def decypher(args):
     if args.brute:
         dec,plain = hn.decrypt_brute(cipher, args.layers, args.verbose, args.OS)
     else:
-        dec,plain = hn.decrypt_with_pass(cipher, args.password, args.layers, args.verbose, args.OS)
+        dec,plain = hn.decrypt_with_pass(cipher, args.password.encode('utf-8'), args.layers, args.verbose, args.OS)
 
     if args.outfile == '-':
-        sys.stdout.write(plain)
+        sys.stdout.write(plain.decode(encoding='utf-8', errors='replace'))
     else:
         outfile = args.outfile+dec.extension
-        with open(outfile, 'w') as f:
+        with open(outfile, 'wb') as f:
             f.write(plain)
 
 def dechead(args):
@@ -41,7 +41,7 @@ def encypher(args):
     extension = args.infile[i:] if i != -1 else ''
 
     cipher = hn.encrypt_with_pass(args.comment, args.signature, args.OS, extension,
-                                  plain, args.password)
+                                  plain, args.password.encode('utf-8'))
 
     if args.outfile == '-':
         sys.stdout.write(cipher)
