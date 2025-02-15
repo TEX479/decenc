@@ -56,12 +56,12 @@ def hn_hash(text:bytes, hashOS:str) -> int:
 def decrypt(data:str, passcode:int) -> bytes:
     strArray = data.split()
 
-    R = bytearray()
+    R: list[int] = []
     for s in strArray:
         num2 = int(s)
         num4 = (num2 - 0x7fff) - passcode
         num4 //= 1822
-        R.append(int(num4))
+        R.append(num4)
     return bytes(R)
 
 def encrypt(data:bytes, passcode:int) -> str:
@@ -84,9 +84,11 @@ class DEC_ENC:
         header = header.split('::')
         if len(header) > 4:
             _,comment,signature,check,extension = header
-        else:
+        elif len(header) == 4:
             extension = ''
             _,comment,signature,check = header
+        else:
+            raise ValueError("Invalid DEC_ENC file. Header is missing or malformed.")
 
         if comment:
             comment = decrypt(comment, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
@@ -103,9 +105,9 @@ class DEC_ENC:
         self.need_pass = decrypt(self.check, hn_hash(b'', hashOS)) != b'ENCODED'
 
     def header(self) -> str:
-        h: str = f'Comment: {self.comment}'
-        h += f'\nSignature: {self.signature}'
-        h += f'\nExtension: {self.extension}'
+        h: str = f'Comment:   {self.comment}'
+        h   += f'\nSignature: {self.signature}'
+        h   += f'\nExtension: {self.extension}'
         return h
 
 # Decoding ways
@@ -118,8 +120,8 @@ def dec_msg_brute(dec:DEC_ENC) -> tuple[int, bytes]:
         r = decrypt(dec.check, pw)
         if r == b'ENCODED':
             plain = decrypt(dec.cipher, pw)
-            break
-    return pw, plain # type: ignore # <- this is fine, since we know that the loop in this function always sets "pw" and "plain"
+            return pw, plain
+    raise Exception("Unable to decrypt. This shouldn't happen.")
 
 def dec_msg_pass(dec:DEC_ENC, password:bytes, hashOS:str) -> bytes:
     """
@@ -143,10 +145,7 @@ def decrypt_header_only(s:str, hashOS:str) -> None:
     """
     dec = DEC_ENC(s, hashOS)
     print(dec.header())
-    if dec.need_pass:
-        print('Content is password protected')
-    else:
-        print('Content is not password protected')
+    print(f'Content is {"" if dec.extension else "not "}password protected')
 
 def decrypt_with_pass(s:str, password:bytes, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform) -> tuple[DEC_ENC, bytes]:
     """
