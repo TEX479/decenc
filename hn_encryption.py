@@ -1,12 +1,8 @@
-from __future__ import print_function,division
 import sys
 if sys.version_info < (3, 0):
-    range = xrange
+    raise Exception("This program is not compatible with older python versions.")
 
-WINDOWS_IDENTIFIERS = ['windows','Windows','win32', 'cygwin']
-
-# General helper
-def debug(*args,**kwargs): print(*args,file=sys.stderr,**kwargs) # type: ignore
+debug = print
 
 def intify(x:int) -> int:
     y = x&0xffffffff
@@ -46,14 +42,14 @@ def hn_hash_win(text:bytes) -> int:
 
 def hn_hash(text:bytes, hashOS:str) -> int:
     # Only Windows actually differs
-    if hashOS in WINDOWS_IDENTIFIERS:
+    if "win" in hashOS:
         h = hn_hash_win(text)
     else:
         h = hn_hash_linux(text)
     return h % (2**16)
 
 # Actual decryption/encryption code
-def decrypt(data:str, passcode:int) -> bytes:
+def _decrypt(data:str, passcode:int) -> bytes:
     strArray = data.split()
 
     R: list[int] = []
@@ -64,7 +60,7 @@ def decrypt(data:str, passcode:int) -> bytes:
         R.append(num4)
     return bytes(R)
 
-def encrypt(data:bytes, passcode:int) -> str:
+def _encrypt(data:bytes, passcode:int) -> str:
     R: list[int] = []
     for c in data:
         R.append(c*1822 + passcode + 0x7fff)
@@ -78,59 +74,63 @@ class DEC_ENC:
         Parses DEC_ENC file contents and decrypt header.
     """
     def __init__(self, content:str, hashOS:str=sys.platform) -> None:
+        if len(content.strip().split("\n")) != 2:
+            raise ValueError("Invalid DEC_ENC file.")
         header = content.strip().split('\n')[0]
         self.cipher = content.strip().split('\n')[1]
 
         header = header.split('::')
-        if len(header) > 4:
-            _,comment,signature,check,extension = header
+        if len(header) == 5:
+            hn_encryption_signature,comment,encryption_host,check,extension = header
         elif len(header) == 4:
             extension = ''
-            _,comment,signature,check = header
+            hn_encryption_signature,comment,encryption_host,check = header
         else:
+            raise ValueError("Invalid DEC_ENC file. Header is missing or malformed.")
+        if hn_encryption_signature != "#DEC_ENC":
             raise ValueError("Invalid DEC_ENC file. Header is missing or malformed.")
 
         if comment:
-            comment = decrypt(comment, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
-        if signature:
-            signature = decrypt(signature, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
+            comment = _decrypt(comment, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
+        if encryption_host:
+            encryption_host = _decrypt(encryption_host, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
         if extension:
-            extension = decrypt(extension, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
+            extension = _decrypt(extension, hn_hash(b'', hashOS)).decode(encoding="utf-8", errors="replace")
 
         self.comment = comment
-        self.signature = signature
+        self.encryption_host = encryption_host
         self.check = check
         self.extension = extension
 
-        self.need_pass = decrypt(self.check, hn_hash(b'', hashOS)) != b'ENCODED'
+        self.need_pass = _decrypt(self.check, hn_hash(b'', hashOS)) != b'ENCODED'
 
     def header(self) -> str:
-        h: str = f'Comment:   {self.comment}'
-        h   += f'\nSignature: {self.signature}'
+        h: str = f'Comment  : {self.comment}'
+        h   += f'\nHost     : {self.encryption_host}'
         h   += f'\nExtension: {self.extension}'
         return h
 
 # Decoding ways
-def dec_msg_brute(dec:DEC_ENC) -> tuple[int, bytes]:
+def _dec_msg_brute(dec:DEC_ENC) -> tuple[int, bytes]:
     """
         Brute force decoding
     """
     # Brute force decryption
     for pw in range(0,2**16):
-        r = decrypt(dec.check, pw)
+        r = _decrypt(dec.check, pw)
         if r == b'ENCODED':
-            plain = decrypt(dec.cipher, pw)
+            plain = _decrypt(dec.cipher, pw)
             return pw, plain
     raise Exception("Unable to decrypt. This shouldn't happen.")
 
-def dec_msg_pass(dec:DEC_ENC, password:bytes, hashOS:str) -> bytes:
+def _dec_msg_pass(dec:DEC_ENC, password:bytes, hashOS:str) -> bytes:
     """
         Decode with given pass
     """
     i = hn_hash(password, hashOS)
-    r = decrypt(dec.check,i)
+    r = _decrypt(dec.check,i)
     if r == b'ENCODED':
-        plain = decrypt(dec.cipher,i)
+        plain = _decrypt(dec.cipher,i)
     else:
         if password == b'':
             raise Exception("A password is needed")
@@ -139,84 +139,84 @@ def dec_msg_pass(dec:DEC_ENC, password:bytes, hashOS:str) -> bytes:
     return plain
 
 # User level stuff
-def decrypt_header_only(s:str, hashOS:str) -> None:
+def print_header(encrypted_text:str, hashOS:str) -> None:
     """
         Decrypt only the header
     """
-    dec = DEC_ENC(s, hashOS)
+    dec = DEC_ENC(encrypted_text, hashOS)
     print(dec.header())
     print(f'Content is {"" if dec.extension else "not "}password protected')
 
-def decrypt_with_pass(s:str, password:bytes, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform) -> tuple[DEC_ENC, bytes]:
+def decrypt(encrypted_text:str, password:bytes=b"", nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform) -> tuple[DEC_ENC, bytes]:
     """
         Decrypt given password
     """
     if nlayers <= 0: raise ValueError("0 decryptions means this function does nothing.")
     for i in range(nlayers):
-        dec = DEC_ENC(s, hashOS)
-        s_bytes = dec_msg_pass(dec, password, hashOS)
+        dec = DEC_ENC(encrypted_text, hashOS)
+        s_bytes = _dec_msg_pass(dec, password, hashOS)
 
         if i+1 < nlayers:
-            try:    s = s_bytes.decode(encoding='utf-8', errors='strict')
+            try:    encrypted_text = s_bytes.decode(encoding='utf-8', errors='strict')
             except: raise ValueError(f"Unable to decrypt past layer {i}. Is 'nlayers' set too high for this file?")
 
         if verbose:
-            debug('=== Pass {} ==='.format(i+1))
+            debug(f'=== Pass {i+1} ===')
             debug(dec.header())
         #plain = dec_msg_pass(check, msg, 'Obi-Wan')
     return dec,s_bytes # type: ignore # <- this is fine, because dec will be set in the loop
 
-def decrypt_brute(s:str, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform) -> tuple[DEC_ENC, bytes]:
+def decrypt_brute(encrypted_text:str, nlayers:int=1, verbose:bool=False, hashOS:str=sys.platform) -> tuple[DEC_ENC, bytes]:
     """
         Brute force decrypter
     """
     if nlayers <= 0: raise ValueError("0 decryptions means this function does nothing.")
     for i in range(nlayers):
-        dec = DEC_ENC(s, hashOS)
-        pw,s_bytes = dec_msg_brute(dec)
+        dec = DEC_ENC(encrypted_text, hashOS)
+        pw,s_bytes = _dec_msg_brute(dec)
 
         if i+1 < nlayers:
-            try:    s = s_bytes.decode(encoding='utf-8', errors='strict')
+            try:    encrypted_text = s_bytes.decode(encoding='utf-8', errors='strict')
             except: raise ValueError(f"Unable to decrypt past layer {i}. Is 'nlayers' set too high for this file?")
 
         if verbose:
             debug('=== Pass {} ==='.format(i+1))
             debug(dec.header())
             #debug(s)
-            if hashOS in WINDOWS_IDENTIFIERS:
+            if "win" in hashOS:
                 import rainbow_win as rainbow
             else:
                 import rainbow_linux as rainbow
             debug('One possible pass is', rainbow.table[pw])
     return dec,s_bytes # type: ignore # <- this is fine, because dec will be set in the loop
 
-def encrypt_with_pass(comment:str, signature:str, hashOS:str, extension:str|None, plain:bytes, password:bytes) -> str:
+def encrypt(comment:str, encryption_host:str, extension:str|None, plain:bytes, password:bytes=b"", hashOS:str=sys.platform) -> str:
     """
         Encrypt given password
     """
     passnum = hn_hash(password, hashOS)
 
-    comment = encrypt(comment.encode("utf-8"), hn_hash(b'', hashOS))
-    signature = encrypt(signature.encode("utf-8"), hn_hash(b'', hashOS))
-    check = encrypt('ENCODED'.encode("utf-8"), passnum)
-    if extension != None: extension = encrypt(extension.encode("utf-8"), hn_hash(b'', hashOS))
-    cipher = encrypt(plain, passnum)
+    comment = _encrypt(comment.encode("utf-8"), hn_hash(b'', hashOS))
+    encryption_host = _encrypt(encryption_host.encode("utf-8"), hn_hash(b'', hashOS))
+    check = _encrypt('ENCODED'.encode("utf-8"), passnum)
+    if extension != None: extension = _encrypt(extension.encode("utf-8"), hn_hash(b'', hashOS))
+    cipher = _encrypt(plain, passnum)
 
     if extension != None:
-        header = ['#DEC_ENC', comment, signature, check, extension]
+        header = ['#DEC_ENC', comment, encryption_host, check, extension]
     else:
-        header = ['#DEC_ENC', comment, signature, check]
+        header = ['#DEC_ENC', comment, encryption_host, check]
     return '::'.join(header) + '\n' + cipher
 
 if __name__ == "__main__":
     with open("message_linux.dec", "r") as f:
         s = f.read()
-    dec_enc, output_bytes = decrypt_brute(s=s, nlayers=1, verbose=True, hashOS="linux")
+    dec_enc, output_bytes = decrypt_brute(encrypted_text=s, nlayers=1, verbose=True, hashOS="linux")
     #print(dec_enc.header())
     print(output_bytes.decode(encoding="utf-8", errors="replace"))
 
     with open("message_win.dec", "r") as f:
         s = f.read()
-    dec_enc, output_bytes = decrypt_brute(s=s, nlayers=1, verbose=True, hashOS="windows")
+    dec_enc, output_bytes = decrypt_brute(encrypted_text=s, nlayers=1, verbose=True, hashOS="windows")
     #print(dec_enc.header())
     print(output_bytes.decode(encoding="utf-8", errors="replace"))

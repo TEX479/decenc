@@ -21,7 +21,7 @@ def decypher(args):
     if args.brute:
         dec,plain = hn.decrypt_brute(cipher, args.layers, args.verbose, args.OS)
     else:
-        dec,plain = hn.decrypt_with_pass(cipher, args.password.encode('utf-8'), args.layers, args.verbose, args.OS)
+        dec,plain = hn.decrypt(cipher, args.password.encode('utf-8'), args.layers, args.verbose, args.OS)
 
     if args.outfile == '-':
         sys.stdout.write(plain.decode(encoding='utf-8', errors='replace'))
@@ -32,7 +32,7 @@ def decypher(args):
 
 def dechead(args):
     cipher = read_input(args.infile)
-    hn.decrypt_header_only(cipher, args.OS)
+    hn.print_header(cipher, args.OS)
 
 def encypher(args):
     plain = read_input(args.infile)
@@ -40,7 +40,7 @@ def encypher(args):
     i = args.infile.rfind('.')
     extension = args.infile[i:] if i != -1 else ''
 
-    cipher = hn.encrypt_with_pass(args.comment, args.signature, args.OS, extension,
+    cipher = hn.encrypt(args.comment, args.signature, args.OS, extension,
                                   plain, args.password.encode('utf-8'))
 
     if args.outfile == '-':
